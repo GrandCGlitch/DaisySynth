@@ -11,7 +11,12 @@ static DaisySeed  hw;
 static Oscillator osc;
 static MoogLadder flt;
 
-float  saw, freq;
+float  saw, freq, res;
+
+int detunePin = 19;
+int filtfreqPin = 20;
+int filtResPin = 21;
+
 
 static void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
                           AudioHandle::InterleavingOutputBuffer out,
@@ -21,7 +26,9 @@ static void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
     for(size_t i = 0; i < size; i += 2)
     {
         freq = ((5000.0 * (hardware.adc.GetFloat(1) / 65535.0)) + 5000.0);
+        res = (hardware.adc.GetFloat(2) / 655535.0);
         flt.SetFreq(freq);
+        flt.SetRes(res);
 
         osc.SetFreq((440.0 * (hardware.adc.GetFloat(0) / 65535.0)) + 440.0);
         saw = osc.Process();
@@ -45,15 +52,15 @@ int main(void)
     flt.SetRes(0.7);
 
 
+    AdcChannelConfig adcConfig[3];
+    adcConfig[0].InitSingle(hardware.GetPin(detunePin));
+    adcConfig[1].InitSingle(hardware.GetPin(filtfreqPin));
+    adcConfig[2].InitSingle(hardware.GetPin(filtResPin));
+    hardware.adc.Init(adcConfig, 3);
+    hardware.adc.Start();
+
     hardware.Configure();
     hardware.Init();
-
-
-    AdcChannelConfig adcConfig;
-    adcConfig.InitSingle(hardware.GetPin(20));
-    adcConfig.InitSingle(hardware.GetPin(21));
-    hardware.adc.Init(&adcConfig, 2);
-    hardware.adc.Start();
 
 
     osc.SetWaveform(osc.WAVE_SAW);
