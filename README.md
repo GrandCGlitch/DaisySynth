@@ -1,1 +1,1 @@
-Generates sine wave output
+A simple synth for Daisy Seed, one saw osc and a moog ladder filter
