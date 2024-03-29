@@ -1,0 +1,69 @@
+#include "daisysp.h"
+#include "daisy_seed.h"
+#include "moogladder.h"
+
+using namespace daisysp;
+using namespace daisy;
+
+DaisySeed hardware;
+
+static DaisySeed  hw;
+static Oscillator osc;
+static MoogLadder flt;
+
+float  saw, freq;
+
+static void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
+                          AudioHandle::InterleavingOutputBuffer out,
+                          size_t                                size)
+{
+    float sig;
+    for(size_t i = 0; i < size; i += 2)
+    {
+        freq = ((5000.0 * (hardware.adc.GetFloat(1) / 65535.0)) + 5000.0);
+        flt.SetFreq(freq);
+
+        osc.SetFreq((440.0 * (hardware.adc.GetFloat(0) / 65535.0)) + 440.0);
+        saw = osc.Process();
+        sig = flt.Process(saw);
+
+        out[i] = sig;
+        out[i + 1] = sig;
+    }
+}
+
+int main(void)
+{
+
+    float sample_rate;
+    hw.Configure();
+    hw.Init();
+    hw.SetAudioBlockSize(4);
+    sample_rate = hw.AudioSampleRate();
+    osc.Init(sample_rate);
+    flt.Init(sample_rate);
+    flt.SetRes(0.7);
+
+
+    hardware.Configure();
+    hardware.Init();
+
+
+    AdcChannelConfig adcConfig;
+    adcConfig.InitSingle(hardware.GetPin(20));
+    adcConfig.InitSingle(hardware.GetPin(21));
+    hardware.adc.Init(&adcConfig, 2);
+    hardware.adc.Start();
+
+
+    osc.SetWaveform(osc.WAVE_SAW);
+    osc.SetFreq((440.0 * (hardware.adc.GetFloat(0) / 65535.0)) + 440.0);
+    osc.SetAmp(0.5);
+
+    // start callback
+    hw.StartAudio(AudioCallback);
+
+
+    while(1) {
+    }
+}
