@@ -12,6 +12,7 @@ static Oscillator osc;
 static MoogLadder flt;
 
 float  saw, freq, res;
+float potMax = 65535.0;
 
 int detunePin = 19;
 int filtfreqPin = 20;
@@ -25,12 +26,13 @@ static void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
     float sig;
     for(size_t i = 0; i < size; i += 2)
     {
-        freq = ((5000.0 * (hardware.adc.GetFloat(1) / 65535.0)) + 5000.0);
-        res = (hardware.adc.GetFloat(2) / 655535.0);
+        freq = ((5000.0 * (hardware.adc.GetFloat(1) / potMax)) + 5000.0);
+        res = (hardware.adc.GetFloat(2) / potMax);
         flt.SetFreq(freq);
         flt.SetRes(res);
 
-        osc.SetFreq((440.0 * (hardware.adc.GetFloat(0) / 65535.0)) + 440.0);
+        osc.SetFreq((440.0 * (hardware.adc.GetFloat(0) / potMax)) + 440.0);
+        
         saw = osc.Process();
         sig = flt.Process(saw);
 
@@ -64,7 +66,7 @@ int main(void)
 
 
     osc.SetWaveform(osc.WAVE_SAW);
-    osc.SetFreq((440.0 * (hardware.adc.GetFloat(0) / 65535.0)) + 440.0);
+    osc.SetFreq((440.0 * (hardware.adc.GetFloat(0) / potMax)) + 440.0);
     osc.SetAmp(0.5);
 
     // start callback
