@@ -1,1 +1,1 @@
-A simple synth for Daisy Seed, one saw osc and a moog ladder filter
+a simple 2 osc synth with a moog ladder filter (not finished)
