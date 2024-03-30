@@ -48,7 +48,7 @@ static void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
     for(size_t i = 0; i < size; i += 2)
     {
         float vibroAmount = hardware.adc.GetFloat(1);
-        float detuneAmount = hardware.adc.GetFloat(0) * 440;
+        float detuneAmount = hardware.adc.GetFloat(0) * 100;
         osc.SetFreq(lastFreq  + detuneAmount + ((lfo1Out * 100)* vibroAmount));
         osc2.SetFreq(lastFreq + detuneAmount + ((lfo1Out * 100) * vibroAmount));
         sig1 = osc.Process();
@@ -245,7 +245,6 @@ int main(void)
                     auto note_msg = msg.AsNoteOn();
                     if(note_msg.velocity != 0){
                         lastFreq = mtof(note_msg.note);
-                        
                     }
                     if(note_msg.velocity == 0){
                         
