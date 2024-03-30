@@ -4,115 +4,136 @@
 
 using namespace daisysp;
 using namespace daisy;
-
 DaisySeed hardware;
 
 static DaisySeed  hw;
-static Oscillator osc1, osc2, lfo;
-static MoogLadder flt;
+static Oscillator osc, osc2;
 static CrossFade osccross;
+static Svf filter1;
+static Adsr ad1;
+static MidiUsbHandler midi;
 
-float  saw1, saw2 , freq, res, lfoOut;
-
-//12 bit max
-float potMax = 65535.0;
-
+float envout;
 //pick input pins
 int detunePin1 = 18;
 int detunePin2 = 19;
-int filtfreqPin = 20;
-int filtResPin = 21;
-int lfoSpeedPin = 17;
-int lfoFiltPin = 16;
+int filtcut = 20;
+int filtres = 21;
 
+float env_out;
+
+bool gate;
 
 static void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
                           AudioHandle::InterleavingOutputBuffer out,
                           size_t                                size)
 {
-    float sig, oscmix;
+    float sig1, sig2, oscmix;
     for(size_t i = 0; i < size; i += 2)
     {
+        sig1 = osc.Process();
+        sig2 = osc2.Process();
 
-        //set lfo speed and depth
-        lfo.SetFreq((10.0 * (hardware.adc.GetFloat(4)/potMax)));
-        lfo.SetAmp((hardware.adc.GetFloat(5)/potMax));
-        lfoOut = lfo.Process();
-
-        //setup filter
-        freq = (((5000.0 * (hardware.adc.GetFloat(2) / potMax)) + 5000.0) + (lfoOut*5000.0));
-        res = (hardware.adc.GetFloat(3) / potMax);
-        flt.SetFreq(freq);
-        flt.SetRes(res);
-
-        //setup osc detuning
-        osc1.SetFreq((440.0 * (hardware.adc.GetFloat(0) / potMax)) + 440.0);
-        osc2.SetFreq((440.0 * (hardware.adc.GetFloat(1) / potMax)) + 440.0);
-
-        //run oscillators and mix between them 
-        saw1 = osc1.Process();
-        saw2 = osc2.Process();
         osccross.SetPos(0.5);
-        oscmix = osccross.Process(saw1, saw2);
+        oscmix = osccross.Process(sig1, sig2);
 
-        //run mixed oscillators through filter
-        sig = flt.Process(oscmix);
+        osc.SetAmp(env_out);
+        osc2.SetAmp(env_out);
 
-        //output sound
-        out[i] = sig;
-        out[i + 1] = sig;
+        filter1.SetFreq((hardware.adc.GetFloat(2)*5000));
+;       filter1.SetRes(hardware.adc.GetFloat(3));
+        filter1.Process(oscmix);
+        // left out
+        out[i] = filter1.Low();
+
+        // right out
+        out[i + 1] = filter1.Low();
     }
 }
 
 int main(void)
 {
 
-    //setup hardware
     float sample_rate;
     hw.Configure();
     hw.Init();
     hw.SetAudioBlockSize(4);
     sample_rate = hw.AudioSampleRate();
-    osc1.Init(sample_rate);
+    osc.Init(sample_rate);
     osc2.Init(sample_rate);
-    lfo.Init(sample_rate);
-    flt.Init(sample_rate);
+    ad1.Init(sample_rate);
 
-    flt.SetRes(0.7);
+    //setup envelope
+    ad1.SetTime(ADSR_SEG_ATTACK, .1);
+    ad1.SetTime(ADSR_SEG_DECAY, .1);
+    ad1.SetTime(ADSR_SEG_RELEASE, .01);
+    ad1.SetSustainLevel(.25);
 
-    //setup pot inputs
-    AdcChannelConfig adcConfig[6];
-    adcConfig[0].InitSingle(hardware.GetPin(detunePin1));
-    adcConfig[1].InitSingle(hardware.GetPin(detunePin2));
-    adcConfig[2].InitSingle(hardware.GetPin(filtfreqPin));
-    adcConfig[3].InitSingle(hardware.GetPin(filtResPin));
-    adcConfig[4].InitSingle(hardware.GetPin(lfoSpeedPin));
-    adcConfig[5].InitSingle(hardware.GetPin(lfoFiltPin));
-    hardware.adc.Init(adcConfig, 6);
+    Led led1;
+    led1.Init(hardware.GetPin(28), false);
+    led1.Set(0.0);
+    led1.Update();
+
+
+    MidiUsbHandler::Config midi_cfg;
+    midi_cfg.transport_config.periph = MidiUsbTransport::Config::INTERNAL;
+    midi.Init(midi_cfg);    
+
+    AdcChannelConfig adcConfig[4];
+    adcConfig[0].InitSingle (hardware.GetPin(detunePin1));
+    adcConfig[1].InitSingle (hardware.GetPin(detunePin2));
+    adcConfig[2].InitSingle (hardware.GetPin(filtcut));
+    adcConfig[3].InitSingle (hardware.GetPin(filtres));
+
+    hardware.adc.Init(adcConfig, 4);
     hardware.adc.Start();
 
-    hardware.Configure();
-    hardware.Init();
+    // Set parameters for oscillator
+    osc.SetWaveform(osc.WAVE_SAW);
+    osc.SetFreq(440);
+    osc.SetAmp(0.0);
 
-    //setup osc 1
-    osc1.SetWaveform(osc1.WAVE_SAW);
-    osc1.SetFreq((440.0 * (hardware.adc.GetFloat(0) / potMax)) + 440.0);
-    osc1.SetAmp(0.5);
+    osc2.SetWaveform(osc.WAVE_SAW);
+    osc2.SetFreq(440);
+    osc2.SetAmp(0.0);
 
-    //setup osc 2
-    osc2.SetWaveform(osc2.WAVE_SAW);
-    osc2.SetFreq((440.0 * (hardware.adc.GetFloat(1) / potMax)) + 440.0);
-    osc2.SetAmp(0.5);
+    //setup filter
+    filter1.Init(sample_rate);
+    filter1.SetFreq(500.0);
+    filter1.SetRes(0.85);
+    filter1.SetDrive(0.8);
 
-    //setup lfo
-    lfo.SetWaveform(lfo.WAVE_TRI);
-    lfo.SetFreq(1.0);
-    lfo.SetAmp(0.0);
 
     // start callback
     hw.StartAudio(AudioCallback);
 
 
     while(1) {
+        midi.Listen();
+
+        /** When there are messages waiting in the queue... */
+        while(midi.HasEvents())
+        {
+            /** Pull the oldest one from the list... */
+            auto msg = midi.PopEvent();
+            switch(msg.type)
+            {
+                case NoteOn:
+                {
+                    auto note_msg = msg.AsNoteOn();
+                    if(note_msg.velocity != 0){
+                        osc.SetFreq((mtof(note_msg.note)) + 440*(hardware.adc.GetFloat(0)));
+                        osc2.SetFreq((mtof(note_msg.note)) + 440*(hardware.adc.GetFloat(1)));
+                        gate = true;
+                    }
+                    if(note_msg.velocity == 0){
+                        gate = false;
+                    }
+                    env_out = ad1.Process(gate);
+                }
+                break;
+                default: break;
+            }
+        }
     }
 }
