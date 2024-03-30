@@ -19,7 +19,7 @@ static EchoSmpl echo;
 
 //pick input pins
 int detunePin1 = 18;
-int detunePin2 = 19;
+int FreqMod = 19;
 int filtcut = 20;
 int filtres = 21;
 int attPin = 22;
@@ -35,15 +35,22 @@ int osc2state = 1;
 static Led led1;
 static Led lfoLed;
 
-float env_out;
+float lastFreq;
 
+float env_out;
+float sig2;
+float lfo1Out;
 static void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
                           AudioHandle::InterleavingOutputBuffer out,
                           size_t                                size)
 {
-    float sig1, sig2, oscmix, lfo1Out;
+    float sig1, oscmix;
     for(size_t i = 0; i < size; i += 2)
     {
+        float vibroAmount = hardware.adc.GetFloat(1);
+        float detuneAmount = hardware.adc.GetFloat(0) * 440;
+        osc.SetFreq(lastFreq  + detuneAmount + ((lfo1Out * 100)* vibroAmount));
+        osc2.SetFreq(lastFreq + detuneAmount + ((lfo1Out * 100) * vibroAmount));
         sig1 = osc.Process();
         sig2 = osc2.Process();
 
@@ -68,7 +75,6 @@ static void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
         led1.Set(env_out);
         led1.Update();
 
-	    //float** newout = out;
 	    float knob1,knob2;
 	    knob1 =  hardware.adc.GetFloat(6) * 200.0;
    	    knob2 =  hardware.adc.GetFloat(7);
@@ -78,7 +84,7 @@ static void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
 	    float finalout = echo.Process(filter_out);
         
         // left out
-        out[i] = finalout;
+        out[i] = finalout * 0.5;
 
         // right out
         //out[i + 1] = filter1.Low();
@@ -124,7 +130,7 @@ int main(void)
 
     AdcChannelConfig adcConfig[10];
     adcConfig[0].InitSingle (hardware.GetPin(detunePin1));
-    adcConfig[1].InitSingle (hardware.GetPin(detunePin2));
+    adcConfig[1].InitSingle (hardware.GetPin(FreqMod));
     adcConfig[2].InitSingle (hardware.GetPin(filtcut));
     adcConfig[3].InitSingle (hardware.GetPin(filtres));
     adcConfig[4].InitSingle (hardware.GetPin(attPin));
@@ -238,8 +244,8 @@ int main(void)
                     ad1.Trigger();
                     auto note_msg = msg.AsNoteOn();
                     if(note_msg.velocity != 0){
-                        osc.SetFreq((mtof(note_msg.note)) + 440*(hardware.adc.GetFloat(0)));
-                        osc2.SetFreq((mtof(note_msg.note)) + 440*(hardware.adc.GetFloat(1)));
+                        lastFreq = mtof(note_msg.note);
+                        
                     }
                     if(note_msg.velocity == 0){
                         
