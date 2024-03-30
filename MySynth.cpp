@@ -29,6 +29,7 @@ int feedKnob = 25;
 int lfoSpeed = 15;
 int lfoDepth = 16;
 
+// osc waveform selector
 int osc1state = 1;
 int osc2state = 1;
 
@@ -38,13 +39,13 @@ static Led lfoLed;
 float lastFreq;
 
 float env_out;
-float sig2;
 float lfo1Out;
+
 static void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
                           AudioHandle::InterleavingOutputBuffer out,
                           size_t                                size)
 {
-    float sig1, oscmix;
+    float sig1,sig2, oscmix;
     for(size_t i = 0; i < size; i += 2)
     {
         float vibroAmount = hardware.adc.GetFloat(1);
@@ -115,11 +116,8 @@ int main(void)
     ad1.SetMax(1.0);
     ad1.SetCurve(0); // linear
 
-    
+    //setup led outputs
     led1.Init(hardware.GetPin(28), false);
-    led1.Set(0.0);
-    led1.Update();
-
     lfoLed.Init(hardware.GetPin(0), false);
 
 
@@ -161,9 +159,8 @@ int main(void)
     filter1.SetDrive(0.8);
 
     Switch oscwave1;
-    oscwave1.Init(hardware.GetPin(29), 1000);
-
     Switch oscwave2;
+    oscwave1.Init(hardware.GetPin(29), 1000);
     oscwave2.Init(hardware.GetPin(30), 1000);
 
 
