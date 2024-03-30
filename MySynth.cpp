@@ -1,7 +1,7 @@
 #include "daisysp.h"
 #include "daisy_seed.h"
 #include "UI.h"
-#include "Echo.h"
+#include "Echosmpl.h"
 #include "MapUI.h"
 
 using namespace daisysp;
@@ -15,9 +15,8 @@ static Svf filter1;
 static AdEnv ad1;
 static MidiUsbHandler midi;
 MapUI mapUI[2];
-static Echo echo;
+static EchoSmpl echo;
 
-static float buf[2][64] = {0};
 
 float envout;
 //pick input pins
@@ -41,8 +40,8 @@ float env_out;
 
 bool gate;
 
-static void AudioCallback(AudioHandle::InputBuffer  in,
-                          AudioHandle::OutputBuffer out,
+static void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
+                          AudioHandle::InterleavingOutputBuffer out,
                           size_t                                size)
 {
     float sig1, sig2, oscmix;
@@ -58,6 +57,10 @@ static void AudioCallback(AudioHandle::InputBuffer  in,
         ad1.SetTime(ADENV_SEG_DECAY, hardware.adc.GetFloat(5));
 
 
+        filter1.SetFreq((hardware.adc.GetFloat(2)*5000));
+        filter1.SetRes(hardware.adc.GetFloat(3));
+        filter1.Process(oscmix);
+
         env_out = ad1.Process();
         osc.SetAmp(env_out);
         osc2.SetAmp(env_out);
@@ -66,30 +69,18 @@ static void AudioCallback(AudioHandle::InputBuffer  in,
 
 	    //float** newout = out;
 	    float knob1,knob2;
-	    knob1 =  200.0;//hardware.adc.GetFloat(6) * 200.0;
-   	    knob2 =  1.0 ;//hardware.adc.GetFloat(7);
+	    knob1 =  hardware.adc.GetFloat(6) * 200.0;
+   	    knob2 =  hardware.adc.GetFloat(7);
 	    mapUI[0].setParamValue("Duration", knob1);
         mapUI[0].setParamValue("Feedback", knob2); 
-
-
-
-        buf[0][0] = filter1.Low();
-
-	    float** bufs;
-	    bufs[0] = buf[0];
-	    bufs[1] = buf[0];
-	    echo.compute(size, bufs,out);
-
-
-
-        filter1.SetFreq((hardware.adc.GetFloat(2)*5000));
-        filter1.SetRes(hardware.adc.GetFloat(3));
-        filter1.Process(oscmix);
+        float filter_out = filter1.Low();
+	    float finalout = echo.Process(filter_out);
+        
         // left out
-        out[i] = filter1.Low();
+        out[i] = finalout;
 
         // right out
-        out[i + 1] = filter1.Low();
+        //out[i + 1] = filter1.Low();
     }
 }
 
