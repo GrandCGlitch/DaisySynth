@@ -9,7 +9,7 @@ using namespace daisy;
 DaisySeed hardware;
 
 static DaisySeed  hw;
-static Oscillator osc, osc2;
+static Oscillator osc, osc2, lfo1;
 static CrossFade osccross;
 static Svf filter1;
 static AdEnv ad1;
@@ -17,8 +17,6 @@ static MidiUsbHandler midi;
 MapUI mapUI[2];
 static EchoSmpl echo;
 
-
-float envout;
 //pick input pins
 int detunePin1 = 18;
 int detunePin2 = 19;
@@ -26,25 +24,24 @@ int filtcut = 20;
 int filtres = 21;
 int attPin = 22;
 int decPin = 23;
-
+int durKnob = 24;
+int feedKnob = 25;
+int lfoSpeed = 15;
+int lfoDepth = 16;
 
 int osc1state = 1;
 int osc2state = 1;
 
-int durKnob = 24;
-int feedKnob = 25;
-
 static Led led1;
+static Led lfoLed;
 
 float env_out;
-
-bool gate;
 
 static void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
                           AudioHandle::InterleavingOutputBuffer out,
                           size_t                                size)
 {
-    float sig1, sig2, oscmix;
+    float sig1, sig2, oscmix, lfo1Out;
     for(size_t i = 0; i < size; i += 2)
     {
         sig1 = osc.Process();
@@ -56,8 +53,12 @@ static void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
         ad1.SetTime(ADENV_SEG_ATTACK, hardware.adc.GetFloat(4));
         ad1.SetTime(ADENV_SEG_DECAY, hardware.adc.GetFloat(5));
 
-
-        filter1.SetFreq((hardware.adc.GetFloat(2)*5000));
+        lfo1.SetFreq(hardware.adc.GetFloat(8) * 20);
+        lfo1.SetAmp(1.0);
+        lfo1Out = (lfo1.Process());
+        lfoLed.Set(lfo1Out);
+        lfoLed.Update();
+        filter1.SetFreq((hardware.adc.GetFloat(2)*5000) + (lfo1Out* (hardware.adc.GetFloat(9)*5000)));
         filter1.SetRes(hardware.adc.GetFloat(3));
         filter1.Process(oscmix);
 
@@ -95,6 +96,7 @@ int main(void)
     sample_rate = hw.AudioSampleRate();
     osc.Init(sample_rate);
     osc2.Init(sample_rate);
+    lfo1.Init(sample_rate);
     ad1.Init(sample_rate);
 
     echo.Init(hw.AudioSampleRate());
@@ -112,13 +114,15 @@ int main(void)
     led1.Set(0.0);
     led1.Update();
 
+    lfoLed.Init(hardware.GetPin(0), false);
+
 
 
     MidiUsbHandler::Config midi_cfg;
     midi_cfg.transport_config.periph = MidiUsbTransport::Config::INTERNAL;
     midi.Init(midi_cfg);    
 
-    AdcChannelConfig adcConfig[8];
+    AdcChannelConfig adcConfig[10];
     adcConfig[0].InitSingle (hardware.GetPin(detunePin1));
     adcConfig[1].InitSingle (hardware.GetPin(detunePin2));
     adcConfig[2].InitSingle (hardware.GetPin(filtcut));
@@ -127,7 +131,9 @@ int main(void)
     adcConfig[5].InitSingle (hardware.GetPin(decPin));
     adcConfig[6].InitSingle (hardware.GetPin(durKnob));
     adcConfig[7].InitSingle (hardware.GetPin(feedKnob));
-    hardware.adc.Init(adcConfig, 8);
+    adcConfig[8].InitSingle (hardware.GetPin(lfoSpeed));
+    adcConfig[9].InitSingle (hardware.GetPin(lfoDepth));
+    hardware.adc.Init(adcConfig, 10);
     hardware.adc.Start();
 
     // Set parameters for oscillator
@@ -138,6 +144,9 @@ int main(void)
     osc2.SetWaveform(osc.WAVE_SAW);
     osc2.SetFreq(440);
     osc2.SetAmp(0.0);
+
+    lfo1.SetWaveform(osc.WAVE_TRI);
+    
 
     //setup filter
     filter1.Init(sample_rate);
