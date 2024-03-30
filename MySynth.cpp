@@ -22,20 +22,11 @@ int filtres = 21;
 int attPin = 22;
 int decPin = 23;
 
-static Switch oscwave1;
-static Switch oscwave2;
-int osc1switch = 2;
-int osc2switch = 3;
+
 int osc1state = 1;
+int osc2state = 1;
 
 static Led led1;
-
-static Led SinLed;
-static Led SawLed;
-static Led SquLed;
-static Led TriLed;
-
-GPIO osc1wave;
 
 float env_out;
 
@@ -77,6 +68,7 @@ static void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
 
 int main(void)
 {
+    
 
     float sample_rate;
     hw.Configure();
@@ -99,18 +91,7 @@ int main(void)
     led1.Set(0.0);
     led1.Update();
 
-    SinLed.Init(hardware.GetPin(27), false);
-    SawLed.Init(hardware.GetPin(26), false);
-    SquLed.Init(hardware.GetPin(25), false);
-    TriLed.Init(hardware.GetPin(24), false);
-    SinLed.Set(1.0);
-    SawLed.Set(1.0);
-    SquLed.Set(1.0);
-    TriLed.Set(1.0);
-    SinLed.Update();
-    SawLed.Update();
-    SquLed.Update();
-    TriLed.Update();
+
 
     MidiUsbHandler::Config midi_cfg;
     midi_cfg.transport_config.periph = MidiUsbTransport::Config::INTERNAL;
@@ -123,9 +104,6 @@ int main(void)
     adcConfig[3].InitSingle (hardware.GetPin(filtres));
     adcConfig[4].InitSingle (hardware.GetPin(attPin));
     adcConfig[5].InitSingle (hardware.GetPin(decPin));
-
-    oscwave1.Init(seed::D2);
-    oscwave2.Init(hardware.GetPin(osc2switch));
     hardware.adc.Init(adcConfig, 6);
     hardware.adc.Start();
 
@@ -144,64 +122,74 @@ int main(void)
     filter1.SetRes(0.85);
     filter1.SetDrive(0.8);
 
+    Switch oscwave1;
+    oscwave1.Init(hardware.GetPin(29), 1000);
+
+    Switch oscwave2;
+    oscwave2.Init(hardware.GetPin(30), 1000);
+
 
     // start callback
     hw.StartAudio(AudioCallback);
 
 
     while(1) {
-        if(oscwave1.Pressed()){
-            oscwave1.Debounce();
-            if(osc1state <= 4){
-            osc1state = osc1state + 1;
+        oscwave1.Debounce();
+        oscwave2.Debounce();
+        if(oscwave1.RisingEdge()){
+            if(osc1state < 4){
+            osc1state ++;
             }else{
                 osc1state = 1;
             }
+            switch(osc1state)
+            {
+                case 1:
+                    osc.SetWaveform(osc.WAVE_SIN);
+                    break;
+                
+                case 2:
+                    osc.SetWaveform(osc.WAVE_SAW);
+                    break;
+                
+                case 3:
+                    osc.SetWaveform(osc.WAVE_SQUARE);
+                    break;
+                
+                case 4:
+                    osc.SetWaveform(osc.WAVE_TRI);
+                    break;
 
-            if(osc1state == 1){
-                osc.SetWaveform(osc.WAVE_SIN);
-                SinLed.Set(1.0);
-                SawLed.Set(0.0);
-                SquLed.Set(0.0);
-                TriLed.Set(0.0);
-                SinLed.Update();
-                SawLed.Update();
-                SquLed.Update();
-                TriLed.Update();
             }
-            if(osc1state == 2){
-                osc.SetWaveform(osc.WAVE_SAW);
-                SinLed.Set(0.0);
-                SawLed.Set(1.0);
-                SquLed.Set(0.0);
-                TriLed.Set(0.0);
-                SinLed.Update();
-                SawLed.Update();
-                SquLed.Update();
-                TriLed.Update();
+            System::Delay(1);
+        }
+
+        if(oscwave2.RisingEdge()){
+            if(osc2state < 4){
+            osc2state ++;
+            }else{
+                osc2state = 1;
             }
-            if(osc1state == 3){
-                osc.SetWaveform(osc.WAVE_SQUARE);
-                SinLed.Set(0.0);
-                SawLed.Set(0.0);
-                SquLed.Set(1.0);
-                TriLed.Set(0.0);
-                SinLed.Update();
-                SawLed.Update();
-                SquLed.Update();
-                TriLed.Update();
+            switch(osc2state)
+            {
+                case 1:
+                    osc2.SetWaveform(osc.WAVE_SIN);
+                    break;
+                
+                case 2:
+                    osc2.SetWaveform(osc.WAVE_SAW);
+                    break;
+                
+                case 3:
+                    osc2.SetWaveform(osc.WAVE_SQUARE);
+                    break;
+                
+                case 4:
+                    osc2.SetWaveform(osc.WAVE_TRI);
+                    break;
+
             }
-            if(osc1state == 4){
-                osc.SetWaveform(osc.WAVE_TRI);
-                SinLed.Set(0.0);
-                SawLed.Set(0.0);
-                SquLed.Set(0.0);
-                TriLed.Set(1.0);
-                SinLed.Update();
-                SawLed.Update();
-                SquLed.Update();
-                TriLed.Update();
-            }
+            System::Delay(1);
         }
 
         midi.Listen();
