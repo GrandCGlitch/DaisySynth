@@ -14,13 +14,13 @@ static CrossFade osccross;
 static Svf filter1;
 static AdEnv ad1;
 static MidiUsbHandler midi;
-MapUI mapUI[2];
 static EchoSmpl echo;
 static Phaser phas;
+static MapUI mapUI[2];
 
 //pick input pins
-int detunePin1 = 18;
-int FreqMod = 19;
+int detPin = 18;
+int PhasPin = 19;
 int filtcut = 20;
 int filtres = 21;
 int attPin = 22;
@@ -34,13 +34,13 @@ int lfoDepth = 16;
 int osc1state = 1;
 int osc2state = 1;
 
+int subState = 1;
 static Led led1;
 static Led lfoLed;
 
-float lastFreq;
+float lastFreq, env_out, lfo1Out;
 
-float env_out;
-float lfo1Out;
+
 
 static void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
                           AudioHandle::InterleavingOutputBuffer out,
@@ -49,10 +49,10 @@ static void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
     float sig1,sig2, oscmix;
     for(size_t i = 0; i < size; i += 2)
     {
-        float vibroAmount = hardware.adc.GetFloat(1);
+        float PhasAmount = hardware.adc.GetFloat(1);
         float detuneAmount = hardware.adc.GetFloat(0) * 100;
-        osc.SetFreq(lastFreq  + detuneAmount + ((lfo1Out * 100)* 0));
-        osc2.SetFreq((lastFreq / 2) + detuneAmount + ((lfo1Out * 100) * 0));
+        osc.SetFreq(lastFreq + detuneAmount + ((lfo1Out * 100)* 0));
+        osc2.SetFreq((lastFreq / subState) + detuneAmount + ((lfo1Out * 100) * 0));
         sig1 = osc.Process();
         sig2 = osc2.Process();
 
@@ -85,14 +85,14 @@ static void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
         float filter_out = filter1.Low();
 	    float finalout = echo.Process(filter_out);
         
-        phas.SetFreq(vibroAmount*1000);
+        phas.SetFreq(PhasAmount*1000);
 
-        float sampOut = phas.Process(finalout);
+        float phaseOut = phas.Process(finalout);
         // left out
-        out[i] = sampOut * 0.5;
+        out[i] = phaseOut * 0.5;
 
         // right out
-        //out[i + 1] = filter1.Low();
+        out[i + 1] = phaseOut * 0.5;
     }
 }
 
@@ -105,13 +105,13 @@ int main(void)
     hw.Init();
     hw.SetAudioBlockSize(64);
     sample_rate = hw.AudioSampleRate();
+
     osc.Init(sample_rate);
     osc2.Init(sample_rate);
     lfo1.Init(sample_rate);
     ad1.Init(sample_rate);
     echo.Init(hw.AudioSampleRate());
 	echo.buildUserInterface(&mapUI[0]);
-
     phas.Init(sample_rate);
     phas.SetLfoDepth(1.f);
     phas.SetFreq(500);
@@ -120,7 +120,7 @@ int main(void)
     ad1.SetTime(ADENV_SEG_ATTACK, 0.15);
     ad1.SetTime(ADENV_SEG_DECAY, 0.35);
     ad1.SetMin(0.0);
-    ad1.SetMax(1.0);
+    ad1.SetMax(2.0);
     ad1.SetCurve(0); // linear
 
     //setup led outputs
@@ -134,8 +134,8 @@ int main(void)
     midi.Init(midi_cfg);    
 
     AdcChannelConfig adcConfig[10];
-    adcConfig[0].InitSingle (hardware.GetPin(detunePin1));
-    adcConfig[1].InitSingle (hardware.GetPin(FreqMod));
+    adcConfig[0].InitSingle (hardware.GetPin(detPin));
+    adcConfig[1].InitSingle (hardware.GetPin(PhasPin));
     adcConfig[2].InitSingle (hardware.GetPin(filtcut));
     adcConfig[3].InitSingle (hardware.GetPin(filtres));
     adcConfig[4].InitSingle (hardware.GetPin(attPin));
@@ -146,6 +146,7 @@ int main(void)
     adcConfig[9].InitSingle (hardware.GetPin(lfoDepth));
     hardware.adc.Init(adcConfig, 10);
     hardware.adc.Start();
+
     // Set parameters for oscillator
     osc.SetWaveform(osc.WAVE_SAW);
     osc.SetFreq(440);
@@ -169,6 +170,9 @@ int main(void)
     oscwave1.Init(hardware.GetPin(29), 1000);
     oscwave2.Init(hardware.GetPin(30), 1000);
 
+    Switch subState1;
+    subState1.Init(hardware.GetPin(27), 1000);
+
 
     // start callback
     hw.StartAudio(AudioCallback);
@@ -177,6 +181,23 @@ int main(void)
     while(1) {
         oscwave1.Debounce();
         oscwave2.Debounce();
+        subState1.Debounce();
+        if(subState1.RisingEdge()){
+            switch(subState){
+                case 1:
+                    subState = 2;
+                    break;
+                
+                case 2:
+                    subState = 3;
+                    break;
+                
+                case 3:
+                    subState = 1;
+                    break;
+            }
+        }
+        
         if(oscwave1.RisingEdge()){
             if(osc1state < 4){
             osc1state ++;
@@ -249,9 +270,6 @@ int main(void)
                     if(note_msg.velocity != 0){
                         lastFreq = mtof(note_msg.note);
                         lfo1.Reset();
-                    }
-                    if(note_msg.velocity == 0){
-                        
                     }
                 }
                 break;
