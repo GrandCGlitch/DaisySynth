@@ -16,6 +16,7 @@ static AdEnv ad1;
 static MidiUsbHandler midi;
 MapUI mapUI[2];
 static EchoSmpl echo;
+static Phaser phas;
 
 //pick input pins
 int detunePin1 = 18;
@@ -50,8 +51,8 @@ static void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
     {
         float vibroAmount = hardware.adc.GetFloat(1);
         float detuneAmount = hardware.adc.GetFloat(0) * 100;
-        osc.SetFreq(lastFreq  + detuneAmount + ((lfo1Out * 100)* vibroAmount));
-        osc2.SetFreq(lastFreq + detuneAmount + ((lfo1Out * 100) * vibroAmount));
+        osc.SetFreq(lastFreq  + detuneAmount + ((lfo1Out * 100)* 0));
+        osc2.SetFreq((lastFreq / 2) + detuneAmount + ((lfo1Out * 100) * 0));
         sig1 = osc.Process();
         sig2 = osc2.Process();
 
@@ -84,8 +85,11 @@ static void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
         float filter_out = filter1.Low();
 	    float finalout = echo.Process(filter_out);
         
+        phas.SetFreq(vibroAmount*1000);
+
+        float sampOut = phas.Process(finalout);
         // left out
-        out[i] = finalout * 0.5;
+        out[i] = sampOut * 0.5;
 
         // right out
         //out[i + 1] = filter1.Low();
@@ -105,9 +109,12 @@ int main(void)
     osc2.Init(sample_rate);
     lfo1.Init(sample_rate);
     ad1.Init(sample_rate);
-
     echo.Init(hw.AudioSampleRate());
 	echo.buildUserInterface(&mapUI[0]);
+
+    phas.Init(sample_rate);
+    phas.SetLfoDepth(1.f);
+    phas.SetFreq(500);
 
     //setup envelope
     ad1.SetTime(ADENV_SEG_ATTACK, 0.15);
@@ -139,7 +146,6 @@ int main(void)
     adcConfig[9].InitSingle (hardware.GetPin(lfoDepth));
     hardware.adc.Init(adcConfig, 10);
     hardware.adc.Start();
-
     // Set parameters for oscillator
     osc.SetWaveform(osc.WAVE_SAW);
     osc.SetFreq(440);
@@ -242,6 +248,7 @@ int main(void)
                     auto note_msg = msg.AsNoteOn();
                     if(note_msg.velocity != 0){
                         lastFreq = mtof(note_msg.note);
+                        lfo1.Reset();
                     }
                     if(note_msg.velocity == 0){
                         
