@@ -11,6 +11,7 @@ DaisySeed hardware;
 static DaisySeed  hw;
 static Oscillator osc, osc2, lfo1;
 static CrossFade osccross;
+static CrossFade phasMix;
 static Svf filter1;
 static AdEnv ad1;
 static MidiUsbHandler midi;
@@ -37,6 +38,7 @@ int osc2state = 1;
 int subState = 1;
 static Led led1;
 static Led lfoLed;
+static Led MidiData;
 
 float lastFreq, env_out, lfo1Out;
 
@@ -51,7 +53,7 @@ static void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
     {
         float PhasAmount = hardware.adc.GetFloat(1);
         float detuneAmount = hardware.adc.GetFloat(0) * 100;
-        osc.SetFreq(lastFreq + detuneAmount + ((lfo1Out * 100)* 0));
+        osc.SetFreq(lastFreq +  ((lfo1Out * 100)* 0));
         osc2.SetFreq((lastFreq / subState) + detuneAmount + ((lfo1Out * 100) * 0));
         sig1 = osc.Process();
         sig2 = osc2.Process();
@@ -84,10 +86,10 @@ static void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
         mapUI[0].setParamValue("Feedback", knob2); 
         float filter_out = filter1.Low();
 	    float finalout = echo.Process(filter_out);
-        
-        phas.SetFreq(PhasAmount*1000);
-
+    
+        phas.SetLfoDepth(PhasAmount);
         float phaseOut = phas.Process(finalout);
+
         // left out
         out[i] = phaseOut * 0.5;
 
@@ -99,7 +101,6 @@ static void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
 int main(void)
 {
     
-
     float sample_rate;
     hw.Configure();
     hw.Init();
@@ -114,7 +115,7 @@ int main(void)
 	echo.buildUserInterface(&mapUI[0]);
     phas.Init(sample_rate);
     phas.SetLfoDepth(1.f);
-    phas.SetFreq(500);
+    phas.SetFreq(2000.f);
 
     //setup envelope
     ad1.SetTime(ADENV_SEG_ATTACK, 0.15);
@@ -126,12 +127,10 @@ int main(void)
     //setup led outputs
     led1.Init(hardware.GetPin(28), false);
     lfoLed.Init(hardware.GetPin(0), false);
+    MidiData.Init(hardware.GetPin(8), false);
 
 
-
-    MidiUsbHandler::Config midi_cfg;
-    midi_cfg.transport_config.periph = MidiUsbTransport::Config::INTERNAL;
-    midi.Init(midi_cfg);    
+    
 
     AdcChannelConfig adcConfig[10];
     adcConfig[0].InitSingle (hardware.GetPin(detPin));
@@ -173,10 +172,14 @@ int main(void)
     Switch subState1;
     subState1.Init(hardware.GetPin(27), 1000);
 
+    MidiUsbHandler::Config midi_cfg;
+    midi_cfg.transport_config.periph = MidiUsbTransport::Config::INTERNAL;
+    midi.Init(midi_cfg);    
 
     // start callback
     hw.StartAudio(AudioCallback);
 
+    
 
     while(1) {
         oscwave1.Debounce();
@@ -265,14 +268,23 @@ int main(void)
             {
                 case NoteOn:
                 {
+                    MidiData.Set(1.0);
+                    MidiData.Update();
                     ad1.Trigger();
                     auto note_msg = msg.AsNoteOn();
                     if(note_msg.velocity != 0){
                         lastFreq = mtof(note_msg.note);
                         lfo1.Reset();
+                        
                     }
+                    break;
                 }
-                break;
+                case NoteOff:
+                {
+                    MidiData.Set(0.0);
+                    MidiData.Update();
+                    break;
+                }
                 default: break;
             }
         }
