@@ -1,1 +1,1 @@
-A two osc (one can switch to sub osc) synth, with a low pass res filter, lfo, AD Generator, this runs through a echo fx and a phasor
+a simple 2 osc synth with a moog ladder filter (not finished)

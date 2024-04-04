@@ -4,7 +4,7 @@ TARGET = MySynth
 USE_DAISYSP_LGPL = 1
 
 # Sources
-CPP_SOURCES = MySynth.cpp
+CPP_SOURCES = Protosynth.cpp
 
 # Library Locations
 LIBDAISY_DIR ?= ../../../libDaisy

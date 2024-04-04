@@ -39,6 +39,7 @@ int subState = 1;
 static Led led1;
 static Led lfoLed;
 static Led MidiData;
+bool Gate;
 
 float lastFreq, env_out, lfo1Out;
 
@@ -52,7 +53,7 @@ static void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
     for(size_t i = 0; i < size; i += 2)
     {
         float PhasAmount = hardware.adc.GetFloat(1);
-        float detuneAmount = hardware.adc.GetFloat(0) * 100;
+        float detuneAmount = -50 + (hardware.adc.GetFloat(0) * 100);
         osc.SetFreq(lastFreq +  ((lfo1Out * 100)* 0));
         osc2.SetFreq((lastFreq / subState) + detuneAmount + ((lfo1Out * 100) * 0));
         sig1 = osc.Process();
@@ -129,9 +130,7 @@ int main(void)
     lfoLed.Init(hardware.GetPin(0), false);
     MidiData.Init(hardware.GetPin(8), false);
 
-
-    
-
+    //setup analog inputs
     AdcChannelConfig adcConfig[10];
     adcConfig[0].InitSingle (hardware.GetPin(detPin));
     adcConfig[1].InitSingle (hardware.GetPin(PhasPin));
@@ -150,25 +149,22 @@ int main(void)
     osc.SetWaveform(osc.WAVE_SAW);
     osc.SetFreq(440);
     osc.SetAmp(0.0);
-
     osc2.SetWaveform(osc.WAVE_SAW);
     osc2.SetFreq(440);
     osc2.SetAmp(0.0);
-
     lfo1.SetWaveform(osc.WAVE_TRI);
     
-
     //setup filter
     filter1.Init(sample_rate);
     filter1.SetFreq(500.0);
     filter1.SetRes(0.85);
     filter1.SetDrive(0.8);
 
+    //osc selection switches
     Switch oscwave1;
     Switch oscwave2;
     oscwave1.Init(hardware.GetPin(29), 1000);
     oscwave2.Init(hardware.GetPin(30), 1000);
-
     Switch subState1;
     subState1.Init(hardware.GetPin(27), 1000);
 
@@ -275,7 +271,7 @@ int main(void)
                     if(note_msg.velocity != 0){
                         lastFreq = mtof(note_msg.note);
                         lfo1.Reset();
-                        
+                        Gate = true;
                     }
                     break;
                 }
@@ -283,6 +279,7 @@ int main(void)
                 {
                     MidiData.Set(0.0);
                     MidiData.Update();
+                    Gate = false;
                     break;
                 }
                 default: break;
