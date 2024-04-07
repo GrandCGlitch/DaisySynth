@@ -6,38 +6,20 @@
 
 using namespace daisysp;
 using namespace daisy;
+#define DSY_ADC_MAX_CHANNELS = 18;
 DaisySeed hardware;
 
 static DaisySeed  hw;
 static Oscillator osc, osc2, lfo1;
 static CrossFade osccross;
-static CrossFade phasMix;
-static CrossFade filterMixCross;
 static Svf filter1;
-static AdEnv ad1;
 static MidiUsbHandler midi;
 static EchoSmpl echo;
 static Phaser phas;
 static MapUI mapUI[2];
 static Overdrive overd;
-
-
-//pick input pins
-//Osc Sec
-int detPin1 = 16;
-int detPin2 = 17;
-int oscMixPin = 18;
-int pwKnob1 = 19;
-int pwKnob2 = 20;
-//Filt Knobs
-int filtcut = 21;
-int filtres = 22;
-int filterMix = 23;
-
-//ADSR
-int attPin = 24;
-int decPin = 25;
-int adToFilt = 28;
+static Adsr env;
+static SampleRateReducer sred;
 
 //LFO
 int lfoSpeedPin = 0;
@@ -53,25 +35,15 @@ int overdKnob = 6;
 // osc waveform selector
 int osc1state = 1;
 int osc2state = 1;
-int sin1 =1;
-int saw1 =2;
-int squ1 =3;
-int tri1 =4;
-int sin2 =5;
-int saw2 =6;
-int squ2 =7;
-int tri2 =8;
 int subState = 1;
 
-static Led led1;
-static Led lfoLed;
-static Led sin1Led, sin2Led, saw1Led, saw2Led, squ1Led, squ2Led, tri1Led, tri2Led;
+static Led led1, lfoLed, sin1Led, sin2Led, saw1Led, saw2Led, squ1Led, squ2Led, tri1Led, tri2Led;
 
 bool Gate;
 
-float lastFreq, env_out, lfo1Out, filLow, filHigh, filtMix;
+float lastFreq, env_out, lfo1Out, filLow;
 
-
+float lfoSpeedVAL, lfotoFiltVAL, lfoToOscVAL, fx1VAL, fx2VAL, fx3VAL, fx4VAL, envtofiltVAL, attackVAL, RelVal, SusVal, det1VAL, det2VAL, pw1VAL, pw2VAL, oscmixVAL, cutoffVAL, resdriveVAL, filtresVAL;
 
 static void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
                           AudioHandle::InterleavingOutputBuffer out,
@@ -80,66 +52,88 @@ static void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
     float sig1,sig2, oscmix;
     for(size_t i = 0; i < size; i += 2)
     {
-
-        //lfo process
-        lfo1.SetFreq(hardware.adc.GetMux(0, 0));
-        lfo1.SetAmp(1.0);
-        lfo1Out = (lfo1.Process());
-        lfoLed.Set(lfo1Out);
-        lfoLed.Update();
-
-        //osc proccess
-        float detuneAmount = -50 + (hardware.adc.GetFloat(1) * 100);
-        float detuneAmount2 = -50 + (hardware.adc.GetFloat(2) * 100);
-        osc.SetFreq(lastFreq + detuneAmount + (lfo1Out * hardware.adc.GetMux(0,1)));
-        osc2.SetFreq((lastFreq / subState) + detuneAmount2 + (lfo1Out * hardware.adc.GetMux(0,1)));
-        sig1 = osc.Process();
-        sig2 = osc2.Process();
-        osccross.SetPos(0.5);
-        oscmix = osccross.Process(sig1, sig2);
-
         //adsr
-        ad1.SetTime(ADENV_SEG_ATTACK, hardware.adc.GetFloat(9));
-        ad1.SetTime(ADENV_SEG_DECAY, hardware.adc.GetFloat(10));
-        env_out = ad1.Process();
-        osc.SetAmp(env_out);
-        osc2.SetAmp(env_out);
+        env.SetAttackTime(attackVAL);
+        env.SetReleaseTime(RelVal);
+        env.SetSustainLevel(SusVal);
+        env_out = env.Process(Gate);
         led1.Set(env_out);
         led1.Update();
 
-        //filter high low
-        filter1.SetFreq((hardware.adc.GetFloat(6)*5000) + ((env_out * 5000) * hardware.adc.GetFloat(11)) + ((lfo1Out * 5000)* hardware.adc.GetMux(0,2)));
-        filter1.SetRes(hardware.adc.GetFloat(7));
+        //lfo 
+        lfo1.SetFreq(lfoSpeedVAL * 20);
+        lfo1.SetAmp(1.0);
+        lfo1Out = (lfo1.Process());
+
+        //osc proccess
+        float detuneAmount = -50 + det1VAL;
+        float detuneAmount2 = -50 + det2VAL;
+        osc.SetFreq(lastFreq + detuneAmount  +(lfo1Out * (lfoToOscVAL*50)));
+        osc2.SetFreq(((lastFreq / subState) + detuneAmount2)+(lfo1Out * (lfoToOscVAL*50))); 
+        osc.SetPw(pw1VAL);
+        osc2.SetPw(pw2VAL);
+        sig1 = osc.Process();
+        sig2 = osc2.Process();
+        osccross.SetPos(oscmixVAL);
+        oscmix = osccross.Process(sig1, sig2);
+        osc.SetAmp(env_out);
+        osc2.SetAmp(env_out);
+
+        //filter
+        float lfoModAmount = ((lfo1Out * 5000) * lfotoFiltVAL) + ((env_out * envtofiltVAL) * 4000.0);
+        filter1.SetFreq(cutoffVAL + lfoModAmount);
+        filter1.SetRes(filtresVAL);
         filter1.Process(oscmix);
+        filter1.SetDrive(resdriveVAL);
         filLow = filter1.Low();
-        filHigh = filter1.High();
-        filterMixCross.SetPos(hardware.adc.GetFloat(8));
-        filterMix = filterMixCross.Process(filLow, filHigh);
         
-        //echo code
+        //echo
 	    float knob1,knob2;
-	    knob1 =  hardware.adc.GetMux(0, 3) * 200.0;
-   	    knob2 =  hardware.adc.GetMux(0, 4);
+	    knob1 =  fx1VAL * 200.0;
+   	    knob2 =  fx2VAL;
 	    mapUI[0].setParamValue("Duration", knob1);
         mapUI[0].setParamValue("Feedback", knob2); 
-        float filter_out = filter1.Low();
-	    float finalout = echo.Process(filter_out);
+	    float echoOut = echo.Process(filLow);
     
         //phaser
-        float PhasAmount = hardware.adc.GetMux(0, 5);
+        float PhasAmount = fx3VAL;
         phas.SetLfoDepth(PhasAmount);
-        float phaseOut = phas.Process(finalout);
+        float phaseOut = phas.Process(echoOut);
 
-        //overdrive
-        overd.SetDrive(hardware.adc.GetMux(0,6));
-        float drive_out = overd.Process(phaseOut);
+        //sample red
+        sred.SetFreq(fx4VAL);
+        float sampleRedOut = sred.Process(phaseOut);
 
         // left out
-        out[i] = drive_out * 0.5;
+        out[i] = sampleRedOut * 0.5;
 
         // right out
-        out[i + 1] = drive_out * 0.5;
+        out[i + 1] = sampleRedOut* 0.5;
     }
+}
+
+int getAnalogInputs(void){
+    lfoSpeedVAL = hardware.adc.GetMuxFloat(0,0);
+    lfotoFiltVAL = hardware.adc.GetMuxFloat(0,1);
+    lfoToOscVAL = hardware.adc.GetMuxFloat(0,2);
+    fx1VAL = hardware.adc.GetMuxFloat(0,3);
+    fx2VAL = hardware.adc.GetMuxFloat(0,4);
+    fx3VAL = hardware.adc.GetMuxFloat(0,5);
+    fx4VAL = hardware.adc.GetMuxFloat(0,6);
+    envtofiltVAL = hardware.adc.GetMuxFloat(0,7);
+    det1VAL = (hardware.adc.GetFloat(1) * 100);
+    det2VAL = (hardware.adc.GetFloat(2) * 100);
+    oscmixVAL = hardware.adc.GetFloat(3);
+    pw1VAL =  hardware.adc.GetFloat(4);
+    pw2VAL =  hardware.adc.GetFloat(5);
+    cutoffVAL = (hardware.adc.GetFloat(6)*5000);
+    filtresVAL = hardware.adc.GetFloat(7);
+    resdriveVAL = hardware.adc.GetFloat(8);
+    attackVAL = hardware.adc.GetFloat(9) * 5;
+    SusVal = hardware.adc.GetFloat(10);
+    RelVal = hardware.adc.GetFloat(11) * 2;
+
+
 }
 
 int main(void)
@@ -148,56 +142,51 @@ int main(void)
     float sample_rate;
     hw.Configure();
     hw.Init();
-    hw.SetAudioBlockSize(64);
+    hw.SetAudioBlockSize(4);
     sample_rate = hw.AudioSampleRate();
 
+    env.Init(sample_rate);
+    env.SetTime(ADSR_SEG_ATTACK, .1);
+    env.SetTime(ADSR_SEG_DECAY, 0.0);
+    env.SetTime(ADSR_SEG_RELEASE, .01);
+    env.SetSustainLevel(1);
+    
     osc.Init(sample_rate);
     osc2.Init(sample_rate);
     lfo1.Init(sample_rate);
-    ad1.Init(sample_rate);
     echo.Init(hw.AudioSampleRate());
 	echo.buildUserInterface(&mapUI[0]);
     phas.Init(sample_rate);
     phas.SetLfoDepth(1.f);
     phas.SetFreq(2000.f);
-    overd.Init();
-
-    //setup envelope
-    ad1.SetTime(ADENV_SEG_ATTACK, 0.15);
-    ad1.SetTime(ADENV_SEG_DECAY, 0.35);
-    ad1.SetMin(0.0);
-    ad1.SetMax(2.0);
-    ad1.SetCurve(0); // linear
+    sred.Init();
 
     //setup led outputs
     led1.Init(hardware.GetPin(9), false);
     lfoLed.Init(hardware.GetPin(10), false);
 
-    sin1Led.Init(hardware.GetPin(1), false);
-    saw1Led.Init(hardware.GetPin(2), false);
-    squ1Led.Init(hardware.GetPin(3), false);
-    tri1Led.Init(hardware.GetPin(4), false);
-    sin2Led.Init(hardware.GetPin(5), false);
-    saw2Led.Init(hardware.GetPin(6), false);
-    squ2Led.Init(hardware.GetPin(7), false);
-    tri2Led.Init(hardware.GetPin(8), false);
+    sin1Led.Init(seed::D1, false);
+    saw1Led.Init(seed::D2, false);
+    squ1Led.Init(seed::D3, false);
+    tri1Led.Init(seed::D4, false);
+    sin2Led.Init(seed::D5, false);
+    saw2Led.Init(seed::D6, false);
+    squ2Led.Init(seed::D7, false);
+    tri2Led.Init(seed::D8, false);
 
     AdcChannelConfig adcConfig[12];
     adcConfig[0].InitMux(seed::A0, 8,  seed::D11, seed::D12, seed::D13);
-    // oscPins
-    adcConfig[1].InitSingle (hardware.GetPin(detPin1));
-    adcConfig[2].InitSingle (hardware.GetPin(detPin2));
-    adcConfig[3].InitSingle (hardware.GetPin(oscMixPin));
-    adcConfig[4].InitSingle (hardware.GetPin(pwKnob1));
-    adcConfig[5].InitSingle (hardware.GetPin(pwKnob2));
-    //filter pins
-    adcConfig[6].InitSingle (hardware.GetPin(filtcut));
-    adcConfig[7].InitSingle (hardware.GetPin(filtres));
-    adcConfig[8].InitSingle (hardware.GetPin(filterMix));
-    //adsr pins
-    adcConfig[9].InitSingle (hardware.GetPin(attPin));
-    adcConfig[10].InitSingle (hardware.GetPin(decPin));
-    adcConfig[11].InitSingle (hardware.GetPin(adToFilt));
+    adcConfig[1].InitSingle (seed::A1); //osc 1 detune
+    adcConfig[2].InitSingle (seed::A2); //osc 2 detune
+    adcConfig[3].InitSingle (seed::A3); //osc mix
+    adcConfig[4].InitSingle (seed::A4); //pw1
+    adcConfig[5].InitSingle (seed::A5); //pw2
+    adcConfig[6].InitSingle (hardware.GetPin(21)); //filter cutoff
+    adcConfig[7].InitSingle (seed::A7); //filter res
+    adcConfig[8].InitSingle (seed::A8); //filter drive 
+    adcConfig[9].InitSingle (seed::A9); //attack
+    adcConfig[10].InitSingle (seed::A10); //sustain
+    adcConfig[11].InitSingle (seed::A11); //release
     hardware.adc.Init(adcConfig, 12);
     hardware.adc.Start();
 
@@ -241,6 +230,8 @@ int main(void)
     
 
     while(1) {
+        getAnalogInputs();
+        
         oscwave1.Debounce();
         oscwave2.Debounce();
         subState1.Debounce();
@@ -391,7 +382,6 @@ int main(void)
             {
                 case NoteOn:
                 {
-                    ad1.Trigger();
                     auto note_msg = msg.AsNoteOn();
                     if(note_msg.velocity != 0){
                         lastFreq = mtof(note_msg.note);
