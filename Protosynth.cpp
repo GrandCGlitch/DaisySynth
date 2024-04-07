@@ -6,7 +6,7 @@
 
 using namespace daisysp;
 using namespace daisy;
-#define DSY_ADC_MAX_CHANNELS = 18;
+//#define DSY_ADC_MAX_CHANNELS = 18;
 DaisySeed hardware;
 
 static DaisySeed  hw;
@@ -41,7 +41,7 @@ static Led led1, lfoLed, sin1Led, sin2Led, saw1Led, saw2Led, squ1Led, squ2Led, t
 
 bool Gate;
 
-float lastFreq, env_out, lfo1Out, filLow;
+float lastFreq, env_out, lfo1Out, filLow, pitchBendVal;
 
 float lfoSpeedVAL, lfotoFiltVAL, lfoToOscVAL, fx1VAL, fx2VAL, fx3VAL, fx4VAL, envtofiltVAL, attackVAL, RelVal, SusVal, det1VAL, det2VAL, pw1VAL, pw2VAL, oscmixVAL, cutoffVAL, resdriveVAL, filtresVAL;
 
@@ -66,8 +66,8 @@ static void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
         lfo1Out = (lfo1.Process());
 
         //osc proccess
-        float detuneAmount = -50 + det1VAL;
-        float detuneAmount2 = -50 + det2VAL;
+        float detuneAmount = pitchBendVal + (-50 + det1VAL);
+        float detuneAmount2 = pitchBendVal + (-50 + det2VAL);
         osc.SetFreq(lastFreq + detuneAmount  +(lfo1Out * (lfoToOscVAL*50)));
         osc2.SetFreq(((lastFreq / subState) + detuneAmount2)+(lfo1Out * (lfoToOscVAL*50))); 
         osc.SetPw(pw1VAL);
@@ -112,7 +112,8 @@ static void AudioCallback(AudioHandle::InterleavingInputBuffer  in,
     }
 }
 
-int getAnalogInputs(void){
+void getAnalogInputs(){
+    //multiplexer inputs
     lfoSpeedVAL = hardware.adc.GetMuxFloat(0,0);
     lfotoFiltVAL = hardware.adc.GetMuxFloat(0,1);
     lfoToOscVAL = hardware.adc.GetMuxFloat(0,2);
@@ -121,6 +122,7 @@ int getAnalogInputs(void){
     fx3VAL = hardware.adc.GetMuxFloat(0,5);
     fx4VAL = hardware.adc.GetMuxFloat(0,6);
     envtofiltVAL = hardware.adc.GetMuxFloat(0,7);
+    //adc inputs
     det1VAL = (hardware.adc.GetFloat(1) * 100);
     det2VAL = (hardware.adc.GetFloat(2) * 100);
     oscmixVAL = hardware.adc.GetFloat(3);
@@ -132,8 +134,6 @@ int getAnalogInputs(void){
     attackVAL = hardware.adc.GetFloat(9) * 5;
     SusVal = hardware.adc.GetFloat(10);
     RelVal = hardware.adc.GetFloat(11) * 2;
-
-
 }
 
 int main(void)
@@ -145,6 +145,7 @@ int main(void)
     hw.SetAudioBlockSize(4);
     sample_rate = hw.AudioSampleRate();
 
+    //adsr setup
     env.Init(sample_rate);
     env.SetTime(ADSR_SEG_ATTACK, .1);
     env.SetTime(ADSR_SEG_DECAY, 0.0);
@@ -164,7 +165,6 @@ int main(void)
     //setup led outputs
     led1.Init(hardware.GetPin(9), false);
     lfoLed.Init(hardware.GetPin(10), false);
-
     sin1Led.Init(seed::D1, false);
     saw1Led.Init(seed::D2, false);
     squ1Led.Init(seed::D3, false);
@@ -181,7 +181,7 @@ int main(void)
     adcConfig[3].InitSingle (seed::A3); //osc mix
     adcConfig[4].InitSingle (seed::A4); //pw1
     adcConfig[5].InitSingle (seed::A5); //pw2
-    adcConfig[6].InitSingle (hardware.GetPin(21)); //filter cutoff
+    adcConfig[6].InitSingle (seed::A6); //filter cutoff
     adcConfig[7].InitSingle (seed::A7); //filter res
     adcConfig[8].InitSingle (seed::A8); //filter drive 
     adcConfig[9].InitSingle (seed::A9); //attack
@@ -209,9 +209,9 @@ int main(void)
     //osc selection switches
     Switch oscwave1;
     Switch oscwave2;
+    Switch subState1;
     oscwave1.Init(hardware.GetPin(26), 1000);
     oscwave2.Init(hardware.GetPin(27), 1000);
-    Switch subState1;
     subState1.Init(hardware.GetPin(29), 1000);
 
     //set init wave leds
@@ -226,8 +226,6 @@ int main(void)
 
     // start callback
     hw.StartAudio(AudioCallback);
-
-    
 
     while(1) {
         getAnalogInputs();
@@ -372,11 +370,8 @@ int main(void)
         }
 
         midi.Listen();
-
-        /** When there are messages waiting in the queue... */
         while(midi.HasEvents())
         {
-            /** Pull the oldest one from the list... */
             auto msg = midi.PopEvent();
             switch(msg.type)
             {
@@ -393,6 +388,12 @@ int main(void)
                 case NoteOff:
                 {
                     Gate = false;
+                    break;
+                }
+                case PitchBend:
+                {
+                    auto pitch_msg = msg.AsPitchBend();
+                    pitchBendVal = pitch_msg.value;
                     break;
                 }
                 default: break;
