@@ -136,6 +136,10 @@ void getAnalogInputs(){
     RelVal = hardware.adc.GetFloat(11) * 2;
 }
 
+void bootDFU(){
+    System::ResetToBootloader();
+}
+
 int main(void)
 {
     
@@ -246,6 +250,15 @@ int main(void)
                 case 3:
                     subState = 1;
                     break;
+            }
+        }
+
+        //holding down all buttons boots into dfu mode
+        if(oscwave1.RisingEdge()){
+            if(oscwave2.RisingEdge()){
+                if(subState1.RisingEdge()){
+                    bootDFU();
+                }
             }
         }
         
